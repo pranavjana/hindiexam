@@ -65,17 +65,18 @@ function App() {
   const [deck, setDeck] = useState<Consonant[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  const [stats, setStats] = useState<Record<string, { correct: number; wrong: number }>>(
+  // Stats: tracks last result (true = correct, false = wrong) for each character
+  const [stats, setStats] = useState<Record<string, boolean>>(
     () => {
-      const saved = localStorage.getItem("hindi-stats");
+      const saved = localStorage.getItem("hindi-stats-v2");
       return saved ? JSON.parse(saved) : {};
     }
   );
 
   const saveStats = useCallback(
-    (newStats: Record<string, { correct: number; wrong: number }>) => {
+    (newStats: Record<string, boolean>) => {
       setStats(newStats);
-      localStorage.setItem("hindi-stats", JSON.stringify(newStats));
+      localStorage.setItem("hindi-stats-v2", JSON.stringify(newStats));
     },
     []
   );
@@ -83,13 +84,8 @@ function App() {
   const startSession = (weakOnly = false) => {
     let cards = CONSONANTS;
     if (weakOnly) {
-      cards = CONSONANTS.filter((c) => {
-        const s = stats[c.hindi];
-        if (!s) return true; // never attempted
-        const total = s.correct + s.wrong;
-        return total === 0 || s.correct / total < 1;
-      });
-      if (cards.length === 0) cards = CONSONANTS; // fallback if all 100%
+      cards = CONSONANTS.filter((c) => stats[c.hindi] !== true);
+      if (cards.length === 0) cards = CONSONANTS;
     }
     setDeck(shuffle(cards));
     setCurrentIndex(0);
@@ -99,14 +95,7 @@ function App() {
 
   const markAnswer = (correct: boolean) => {
     const card = deck[currentIndex];
-    const prev = stats[card.hindi] || { correct: 0, wrong: 0 };
-    const newStats = {
-      ...stats,
-      [card.hindi]: {
-        correct: prev.correct + (correct ? 1 : 0),
-        wrong: prev.wrong + (correct ? 0 : 1),
-      },
-    };
+    const newStats = { ...stats, [card.hindi]: correct };
     saveStats(newStats);
     setFlipped(false);
     setCurrentIndex((i) => i + 1);
@@ -141,38 +130,28 @@ function App() {
   }
 
   if (view === "stats") {
-    const entries = CONSONANTS.map((c) => ({
-      ...c,
-      ...(stats[c.hindi] || { correct: 0, wrong: 0 }),
-    }));
-    const totalCorrect = entries.reduce((s, e) => s + e.correct, 0);
-    const totalWrong = entries.reduce((s, e) => s + e.wrong, 0);
-    const total = totalCorrect + totalWrong;
+    const correct = CONSONANTS.filter((c) => stats[c.hindi] === true).length;
+    const attempted = CONSONANTS.filter((c) => stats[c.hindi] !== undefined).length;
 
     return (
       <div className="container">
         <h1>Your Progress</h1>
-        {total > 0 && (
+        {attempted > 0 && (
           <p className="overall">
-            Overall: {totalCorrect}/{total} ({Math.round((totalCorrect / total) * 100)}%)
+            {correct} / {CONSONANTS.length} mastered
           </p>
         )}
         <div className="stats-grid">
-          {entries.map((e) => {
-            const attempts = e.correct + e.wrong;
-            const pct = attempts > 0 ? Math.round((e.correct / attempts) * 100) : -1;
+          {CONSONANTS.map((c) => {
+            const result = stats[c.hindi];
+            const status = result === undefined ? "untried" : result ? "good" : "bad";
             return (
-              <div
-                key={e.hindi}
-                className={`stat-card ${pct === -1 ? "untried" : pct >= 80 ? "good" : pct >= 50 ? "ok" : "bad"}`}
-              >
-                <span className="stat-hindi">{e.hindi}</span>
-                <span className="stat-roman">{e.romanized}</span>
-                {attempts > 0 ? (
-                  <span className="stat-pct">{pct}%</span>
-                ) : (
-                  <span className="stat-pct dim">—</span>
-                )}
+              <div key={c.hindi} className={`stat-card ${status}`}>
+                <span className="stat-hindi">{c.hindi}</span>
+                <span className="stat-roman">{c.romanized}</span>
+                <span className={`stat-pct ${result === undefined ? "dim" : ""}`}>
+                  {result === undefined ? "—" : result ? "✓" : "✗"}
+                </span>
               </div>
             );
           })}
@@ -187,7 +166,7 @@ function App() {
           <button className="btn secondary" onClick={() => setView("menu")}>
             Back
           </button>
-          {total > 0 && (
+          {attempted > 0 && (
             <button className="btn danger" onClick={resetStats}>
               Reset Stats
             </button>
@@ -261,21 +240,18 @@ function App() {
       <div className="sidebar-stats">
         <div className="stats-grid compact">
           {CONSONANTS.map((c) => {
-            const s = stats[c.hindi] || { correct: 0, wrong: 0 };
-            const attempts = s.correct + s.wrong;
-            const pct = attempts > 0 ? Math.round((s.correct / attempts) * 100) : -1;
+            const result = stats[c.hindi];
+            const status = result === undefined ? "untried" : result ? "good" : "bad";
             const isCurrent = current.hindi === c.hindi;
             return (
               <div
                 key={c.hindi}
-                className={`stat-card ${isCurrent ? "current" : ""} ${pct === -1 ? "untried" : pct >= 80 ? "good" : pct >= 50 ? "ok" : "bad"}`}
+                className={`stat-card ${isCurrent ? "current" : ""} ${status}`}
               >
                 <span className="stat-hindi">{c.hindi}</span>
-                {attempts > 0 ? (
-                  <span className="stat-pct">{pct}%</span>
-                ) : (
-                  <span className="stat-pct dim">—</span>
-                )}
+                <span className={`stat-pct ${result === undefined ? "dim" : ""}`}>
+                  {result === undefined ? "—" : result ? "✓" : "✗"}
+                </span>
               </div>
             );
           })}
